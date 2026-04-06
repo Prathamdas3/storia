@@ -1,11 +1,17 @@
 from groq import AsyncGroq
-from .constant import api_key, Stories
+from .constant import Stories
+from .api_key_manager import get_api_key_from_config
 from .prompt import prompt_text
 
-client = AsyncGroq(api_key=api_key)
+
+def get_client() -> AsyncGroq:
+    """Get Groq client with API key from config."""
+    api_key = get_api_key_from_config()
+    return AsyncGroq(api_key=api_key)
 
 
 async def generate_story(topics: list[tuple[str, str]]) -> str:
+    client = get_client()
     models = ["openai/gpt-oss-20b", "llama-3.3-70b-versatile"]
 
     for model in models:

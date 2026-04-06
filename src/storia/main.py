@@ -7,12 +7,22 @@ from .ai import generate_story, write_story
 from .helper import write_config, get_random_topics
 
 
+
 def reset() -> None:
+    existing_key = None
+    if config.exists():
+        try:
+            data = json.loads(config.read_text())
+            existing_key = data.get("api_key")
+        except (json.JSONDecodeError, FileNotFoundError):
+            pass
+
     cfg = DefaultConfig(
         today=date.today().isoformat(),
         content=[],
         length=0,
         mode=Mode.TOPIC_BASED,
+        api_key=existing_key,
     )
     write_config(cfg)
 
@@ -32,11 +42,18 @@ def setup() -> DefaultConfig:
             raise ValueError(f"Invalid JSON in content file: {content_path}")
 
         content_length = len(content)
+
+        print("API key not found. Please enter your Groq API key.")
+        from .api_key_manager import prompt_for_api_key
+
+        api_key = prompt_for_api_key()
+
         cfg = DefaultConfig(
             today=today,
             content=[],
             length=content_length,
             mode=Mode.TOPIC_BASED,
+            api_key=api_key,
         )
         write_config(cfg)
         return cfg
@@ -52,6 +69,7 @@ def setup() -> DefaultConfig:
             content=config_data["content"],
             length=config_data["length"],
             mode=Mode(config_data["mode"]),
+            api_key=config_data.get("api_key"),
         )
 
 
@@ -77,6 +95,15 @@ def update_config(config_data: DefaultConfig) -> None:
 
 def main() -> None:
     config_data = setup()
+
+    # Check if API key exists, prompt if not
+    if not config_data.api_key:
+        print("API key not found in config. Please enter your Groq API key.")
+        from .api_key_manager import prompt_for_api_key
+
+        config_data.api_key = prompt_for_api_key()
+        write_config(config_data)
+
     if config_data.today != date.today().isoformat():
         reset()
     if config_data.mode == Mode.RANDOM:
