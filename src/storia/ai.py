@@ -2,6 +2,7 @@ from groq import AsyncGroq
 from .constant import Stories
 from .api_key_manager import get_api_key_from_config
 from .prompt import prompt_text
+import sys
 
 
 def get_client() -> AsyncGroq:
@@ -14,6 +15,7 @@ async def generate_story(topics: list[tuple[str, str]]) -> str:
     client = get_client()
     models = ["openai/gpt-oss-20b", "llama-3.3-70b-versatile"]
 
+    last_error = None
     for model in models:
         try:
             words = [word for word, _ in topics]
@@ -34,17 +36,26 @@ async def generate_story(topics: list[tuple[str, str]]) -> str:
             if story:
                 return story
         except Exception as e:
-            print(f"Model {model} failed: {e}")
+            last_error = str(e)
+            print(f"Model {model} failed: {e}", file=sys.stderr)
             continue
 
-    raise Exception("All models failed to generate story")
+    print("Error: All AI models failed to generate a story.", file=sys.stderr)
+    print(f"Last error: {last_error}", file=sys.stderr)
+    print("Please check your API key and try again.", file=sys.stderr)
+    sys.exit(1)
 
 
 def write_story(story: str, date: str) -> None:
     parts = story.split("\n\n", 1)
 
     if len(parts) != 2:
-        raise ValueError("Unexpected response format from model")
+        print("Error: AI returned an unexpected response format.", file=sys.stderr)
+        print(
+            "The story must have two parts separated by a blank line.", file=sys.stderr
+        )
+        print("Please try again.", file=sys.stderr)
+        sys.exit(1)
 
     target_language_story = parts[0]
     english_retelling = parts[1]
@@ -56,5 +67,13 @@ def write_story(story: str, date: str) -> None:
         f"--------\n\n"
     )
     print(output)
-    with Stories.open("a", encoding="utf-8") as f:
-        f.write(output)
+    try:
+        with Stories.open("a", encoding="utf-8") as f:
+            f.write(output)
+    except FileNotFoundError:
+        print("Error: Could not save story to file.", file=sys.stderr)
+        print(f"Check that the directory exists: {Stories.parent}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error: Failed to save story: {e}", file=sys.stderr)
+        sys.exit(1)

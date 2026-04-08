@@ -1,20 +1,27 @@
 from .constant import config
 import json
+import sys
 
 
 def get_api_key_from_config() -> str:
     """Read API key from config, raise if missing."""
     if not config.exists():
-        raise ValueError("Config file not found. Run setup first.")
+        print("Error: Config file not found.", file=sys.stderr)
+        print("Please run 'storia' to initialize your configuration.", file=sys.stderr)
+        sys.exit(1)
 
     try:
         data = json.loads(config.read_text())
     except json.JSONDecodeError:
-        raise ValueError("Invalid JSON in config file")
+        print("Error: Config file is corrupted.", file=sys.stderr)
+        print("Try running 'storia --reset' to fix this.", file=sys.stderr)
+        sys.exit(1)
 
     key = data.get("api_key")
     if not key:
-        raise ValueError("API key not set. Please configure your API key.")
+        print("Error: API key not configured.", file=sys.stderr)
+        print("Please run 'storia' to add your Groq API key.", file=sys.stderr)
+        sys.exit(1)
     return key
 
 

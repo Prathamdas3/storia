@@ -2,10 +2,10 @@ from datetime import date
 import json
 import random
 import asyncio
+import sys
 from .constant import DATA_DIR, config, content_path, DefaultConfig, Mode
 from .ai import generate_story, write_story
 from .helper import write_config, get_random_topics
-
 
 
 def reset() -> None:
@@ -37,13 +37,21 @@ def setup() -> DefaultConfig:
             with content_path.open("r") as f:
                 content = json.load(f)
         except FileNotFoundError:
-            raise FileNotFoundError(f"Content file not found: {content_path}")
+            print("Error: Vocabulary file not found.", file=sys.stderr)
+            print(
+                "Please ensure language files are installed correctly.", file=sys.stderr
+            )
+            sys.exit(1)
         except json.JSONDecodeError:
-            raise ValueError(f"Invalid JSON in content file: {content_path}")
+            print("Error: Vocabulary file is corrupted.", file=sys.stderr)
+            print(f"Check the format of: {content_path}", file=sys.stderr)
+            sys.exit(1)
 
         content_length = len(content)
 
-        print("API key not found. Please enter your Groq API key.")
+        print("Welcome to Storia! Let's get you set up.")
+        print("Please enter your Groq API key to continue.")
+        print("(Get one free at https://groq.com)")
         from .api_key_manager import prompt_for_api_key
 
         api_key = prompt_for_api_key()
@@ -62,7 +70,9 @@ def setup() -> DefaultConfig:
             with config.open("r") as f:
                 config_data = json.load(f)
         except json.JSONDecodeError:
-            raise ValueError(f"Invalid JSON in config file: {config}")
+            print("Error: Config file is corrupted.", file=sys.stderr)
+            print("Try running 'storia --reset' to fix this.", file=sys.stderr)
+            sys.exit(1)
 
         return DefaultConfig(
             today=config_data["today"],
@@ -80,9 +90,15 @@ def get_daily_topics(data: DefaultConfig, n: int = 10) -> list[tuple[str, str]]:
             with content_path.open("r") as f:
                 content = json.load(f)
         except FileNotFoundError:
-            raise FileNotFoundError(f"Content file not found: {content_path}")
+            print("Error: Vocabulary file not found.", file=sys.stderr)
+            print(
+                "Please ensure language files are installed correctly.", file=sys.stderr
+            )
+            sys.exit(1)
         except json.JSONDecodeError:
-            raise ValueError(f"Invalid JSON in content file: {content_path}")
+            print("Error: Vocabulary file is corrupted.", file=sys.stderr)
+            print(f"Check the format of: {content_path}", file=sys.stderr)
+            sys.exit(1)
 
         data.content = [tuple(content[i].values()) for i in ids]
         update_config(data)
@@ -94,11 +110,17 @@ def update_config(config_data: DefaultConfig) -> None:
 
 
 def main() -> None:
-    config_data = setup()
+    try:
+        config_data = setup()
+    except SystemExit:
+        raise
+    except Exception as e:
+        print(f"Unexpected error during setup: {e}", file=sys.stderr)
+        print("Please try again or report this issue.", file=sys.stderr)
+        sys.exit(1)
 
-    # Check if API key exists, prompt if not
     if not config_data.api_key:
-        print("API key not found in config. Please enter your Groq API key.")
+        print("API key not found in config. Let's add it now.")
         from .api_key_manager import prompt_for_api_key
 
         config_data.api_key = prompt_for_api_key()
@@ -106,14 +128,39 @@ def main() -> None:
 
     if config_data.today != date.today().isoformat():
         reset()
-    if config_data.mode == Mode.RANDOM:
-        word, meaning = random.choice(config_data.content)
-        print(f"{meaning} : {word}")
-        config_data.mode = Mode.TOPIC_BASED
-        update_config(config_data)
-    elif config_data.mode == Mode.TOPIC_BASED:
-        topics = get_daily_topics(config_data)
-        story = asyncio.run(generate_story(topics))
-        write_story(story, config_data.today)
-        config_data.mode = Mode.RANDOM
-        update_config(config_data)
+
+    try:
+        if config_data.mode == Mode.RANDOM:
+            if not config_data.content:
+                print(
+                    "No vocabulary words available. Switching to story mode.",
+                    file=sys.stderr,
+                )
+                config_data.mode = Mode.TOPIC_BASED
+            else:
+                word, meaning = random.choice(config_data.content)
+                print(f"{meaning} : {word}")
+                config_data.mode = Mode.TOPIC_BASED
+            update_config(config_data)
+        elif config_data.mode == Mode.TOPIC_BASED:
+            topics = get_daily_topics(config_data)
+            story = asyncio.run(generate_story(topics))
+            write_story(story, config_data.today)
+            config_data.mode = Mode.RANDOM
+            update_config(config_data)
+    except IndexError as e:
+        print("Error: No vocabulary words available.", file=sys.stderr)
+        print("Generating a new story instead...", file=sys.stderr)
+        try:
+            topics = get_daily_topics(config_data)
+            story = asyncio.run(generate_story(topics))
+            write_story(story, config_data.today)
+            config_data.mode = Mode.RANDOM
+            update_config(config_data)
+        except Exception as e:
+            print(f"Failed to generate story: {e}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as e:
+        print(f"An error occurred: {e}", file=sys.stderr)
+        print("Please try again.", file=sys.stderr)
+        sys.exit(1)
